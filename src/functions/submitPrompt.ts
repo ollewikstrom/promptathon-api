@@ -6,7 +6,7 @@ import {
 	InvocationContext,
 } from "@azure/functions";
 import { WebPubSubServiceClient } from "@azure/web-pubsub";
-import { Player } from "../playerReg/playerReg";
+import { Player } from "./playerReg";
 
 type SubmitPromptRequest = {
 	gameId: string;

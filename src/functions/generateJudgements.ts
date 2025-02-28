@@ -42,6 +42,13 @@ interface Judgement {
 	timestamp: string;
 }
 
+interface PlayerScore {
+	totalScores: number[];
+	contextScores: number[];
+	technicalScores: number[];
+	clarityScores: number[];
+}
+
 export async function generateJudgements(
 	request: HttpRequest,
 	context: InvocationContext
@@ -63,6 +70,7 @@ export async function generateJudgements(
 		// Get database and container references
 		const database = cosmosClient.database("mini-prompt-quiz");
 		const gameContainer = database.container("games");
+		const playerContainer = database.container("players"); // Add reference to players container
 
 		// Fetch the game and its AI responses
 		const { resource: game } = await gameContainer
@@ -192,7 +200,7 @@ export async function generateJudgements(
 		]);
 
 		// Calculate summary statistics
-		const playerScores = {};
+		const playerScores: Record<string, PlayerScore> = {};
 		judgements.forEach((judgement) => {
 			if (!playerScores[judgement.playerId]) {
 				playerScores[judgement.playerId] = {
@@ -216,11 +224,55 @@ export async function generateJudgements(
 			);
 		});
 
+		// Update each player in the database with their combined score
+		const playerUpdatePromises = Object.keys(playerScores).map(
+			async (playerId) => {
+				try {
+					const scores = playerScores[playerId];
+					const combinedTotalScore = scores.totalScores.reduce(
+						(sum, score) => sum + score,
+						0
+					);
+
+					// Get player's current data
+					const { resource: player } = await playerContainer
+						.item(playerId, gameId)
+						.read();
+
+					if (player) {
+						// Update player with combined score and theme name
+						await playerContainer.item(playerId, gameId).patch([
+							{
+								op: "add",
+								path: "/totalScore",
+								value: combinedTotalScore,
+							},
+							{
+								op: "add",
+								path: "/themeName",
+								value: game.judge?.theme || "Unknown Theme",
+							},
+						]);
+					} else {
+						context.log(
+							`Player ${playerId} not found, cannot update score`
+						);
+					}
+				} catch (error) {
+					context.error(`Error updating player ${playerId}:`, error);
+					// Continue with other players even if one fails
+				}
+			}
+		);
+
+		// Wait for all player updates to complete
+		await Promise.all(playerUpdatePromises);
+
 		return {
 			status: 200,
 			jsonBody: {
 				message:
-					"Successfully generated judgements for all AI responses",
+					"Successfully generated judgements and updated player scores",
 				gameId: gameId,
 				processedCount: judgements.length,
 				judgements: judgements,
