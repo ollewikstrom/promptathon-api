@@ -148,6 +148,11 @@ export async function generateJudgements(
 						);
 					}
 
+					context.log(
+						`Received response for player ${response.playerId} and question ${response.questionId}`
+					);
+					context.log(textContent.text.value);
+
 					// Parse the formatted response
 					const judgementContent = await parseFormattedResponse(
 						textContent.text.value,
@@ -295,19 +300,54 @@ async function parseFormattedResponse(
 	response: string,
 	context: InvocationContext
 ) {
-	// Remove backticks and any leading/trailing whitespace
-	response = response.replace(/```/g, "").trim();
+	// First, check if the response is wrapped in code blocks and extract the content if it is
+	const codeBlockMatch = response.match(/```([\s\S]*?)```/);
+	if (codeBlockMatch) {
+		response = codeBlockMatch[1].trim();
+	}
 
-	// Extract scores with or without denominators
-	const contextMatch = response.match(/Context Score:\s*(\d+)(?:\/300)?/);
-	const technicalMatch = response.match(/Technical Score:\s*(\d+)(?:\/400)?/);
-	const clarityMatch = response.match(/Clarity Score:\s*(\d+)(?:\/300)?/);
-	const finalMatch = response.match(/Final Score:\s*(\d+)(?:\/1000)?/);
+	// Remove evaluation header if present (handle various formats)
+	response = response.replace(/^###\s*Evaluation:?\s*/i, "");
+	response = response.replace(/^(?:\*\*)?Evaluation(?:\*\*)?:?\s*\n?/i, "");
 
-	// Updated justification regex to handle multiline text
-	const justificationMatch = response.match(
-		/Justification:\s*([\s\S]+?)(?=\n|$)/
-	);
+	// We need to handle multiple formats with extremely flexible patterns:
+	// 1. **Context Score:** 51/300  (note the space after colon)
+	// 2. Context Score: 75
+	// 3. **Context Score**: 50/300  (note the colon inside the markdown)
+
+	// Context Score - try multiple patterns
+	let contextMatch =
+		response.match(/\*\*Context\s+Score:\*\*\s*(\d+)/i) ||
+		response.match(/\*\*Context\s+Score\*\*:\s*(\d+)/i) ||
+		response.match(/Context\s+Score:\s*(\d+)/i);
+
+	// Technical Score - try multiple patterns
+	let technicalMatch =
+		response.match(/\*\*Technical\s+Score:\*\*\s*(\d+)/i) ||
+		response.match(/\*\*Technical\s+Score\*\*:\s*(\d+)/i) ||
+		response.match(/Technical\s+Score:\s*(\d+)/i);
+
+	// Clarity Score - try multiple patterns
+	let clarityMatch =
+		response.match(/\*\*Clarity\s+Score:\*\*\s*(\d+)/i) ||
+		response.match(/\*\*Clarity\s+Score\*\*:\s*(\d+)/i) ||
+		response.match(/Clarity\s+Score:\s*(\d+)/i);
+
+	// Final Score - try multiple patterns
+	let finalMatch =
+		response.match(/\*\*Final\s+Score:\*\*\s*(\d+)/i) ||
+		response.match(/\*\*Final\s+Score\*\*:\s*(\d+)/i) ||
+		response.match(/Final\s+Score:\s*(\d+)/i);
+
+	// Justification - try multiple patterns
+	let justificationMatch =
+		response.match(
+			/\*\*Justification:\*\*\s*([\s\S]+?)(?=\n\*\*|\n$|$)/i
+		) ||
+		response.match(
+			/\*\*Justification\*\*:\s*([\s\S]+?)(?=\n\*\*|\n$|$)/i
+		) ||
+		response.match(/Justification:\s*([\s\S]+?)(?=\n\S+:|\n$|$)/i);
 
 	if (!contextMatch) throw new Error("Could not parse Context Score");
 	if (!technicalMatch) throw new Error("Could not parse Technical Score");

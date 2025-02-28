@@ -34,6 +34,8 @@ export async function submitPrompt(
 
 	const updatedPlayer = { ...player.resource, prompt };
 
+	context.log("Updating player with prompt:", updatedPlayer);
+
 	await playerContainer.items.upsert(updatedPlayer);
 	await sendWebPubSubMessage(updatedPlayer, context);
 
